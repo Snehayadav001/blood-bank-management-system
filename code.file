@@ -1,0 +1,72 @@
+pip install django
+django-admin startproject bloodbank
+cd bloodbank
+python manage.py startapp bank
+
+from django.db import models
+from django.contrib.auth.models import User
+
+# Extends the basic User model for Donors and Patients
+class Donor(models.Model):
+    user = models.OneToOneField(User, on_backend=models.CASCADE)
+    blood_group = models.CharField(max_length=5)
+    address = models.CharField(max_length=100)
+    mobile = models.CharField(max_length=20, null=False)
+    
+    def __str__(self):
+        return self.user.first_name
+
+class Patient(models.Model):
+    user = models.OneToOneField(User, on_backend=models.CASCADE)
+    blood_group = models.CharField(max_length=5)
+    disease = models.CharField(max_length=100)
+    mobile = models.CharField(max_length=20, null=False)
+
+# Tracking the actual blood units in the bank
+class BloodStock(models.Model):
+    blood_group = models.CharField(max_length=5, unique=True)
+    unit = models.PositiveIntegerField(default=0)
+
+# Recording Donation Requests
+class DonationRequest(models.Model):
+    donor = models.ForeignKey(Donor, on_delete=models.CASCADE)
+    disease = models.CharField(max_length=100, default="Nothing")
+    unit = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=20, default='Pending') # Pending, Approved, Rejected
+    date = models.DateTimeField(auto_now_add=True)
+
+# Recording Blood Requests (from Patients or Donors)
+class BloodRequest(models.Model):
+    request_by_name = models.CharField(max_length=100) # Can be Patient or Donor name
+    blood_group = models.CharField(max_length=5)
+    unit = models.PositiveIntegerField(default=0)
+    status = models.CharField(max_length=20, default='Pending')
+    date = models.DateTimeField(auto_now_add=True)
+
+from django.shortcuts import render
+from .models import BloodStock, DonationRequest, BloodRequest
+
+def approve_donation(request, pk):
+    donation = DonationRequest.objects.get(id=pk)
+    donation.status = 'Approved'
+    donation.save()
+    
+    # Increase inventory
+    stock = BloodStock.objects.get(blood_group=donation.donor.blood_group)
+    stock.unit += donation.unit
+    stock.save()
+
+def approve_request(request, pk):
+    blood_req = BloodRequest.objects.get(id=pk)
+    stock = BloodStock.objects.get(blood_group=blood_req.blood_group)
+    
+    if stock.unit >= blood_req.unit:
+        blood_req.status = 'Approved'
+        blood_req.save()
+        # Decrease inventory
+        stock.unit -= blood_req.unit
+        stock.save()
+    else:
+        # Handle insufficient stock logic here
+        blood_req.status = 'Rejected'
+        blood_req.save()
